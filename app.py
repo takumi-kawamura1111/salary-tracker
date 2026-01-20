@@ -157,27 +157,41 @@ st.divider()
 tab1, tab2, tab3, tab4 = st.tabs(["✅ 進捗", "📅 年集計", "🧾 履歴", "📈 グラフ"])
 
 with tab1:
-    st.subheader("進捗")
-    total = int(df["salary"].sum()) if not df.empty else 0
-    diff = TARGET - total
-    progress = min(max(total / TARGET, 0.0), 1.0) if TARGET > 0 else 0.0
-    st.progress(progress)
+    st.subheader("📅 年別進捗")
 
-    if compact:
-        st.metric("合計（円）", f"{total:,}")
-        st.metric("達成率", f"{progress * 100:.1f}%")
-        if diff >= 0:
-            st.metric("150万円まで残り（円）", f"{diff:,}")
-        else:
-            st.metric("150万円を超過（円）", f"{abs(diff):,}")
+    if df.empty:
+        st.info("データがありません．")
     else:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("合計（円）", f"{total:,}")
-        if diff >= 0:
-            c2.metric("150万円まで残り（円）", f"{diff:,}")
+        ts = build_timeseries(df)
+        years = sorted(ts["year"].unique().tolist(), reverse=True)
+
+        # 対象年を選択
+        selected_year = st.selectbox("対象年", years)
+
+        # 年合計
+        year_total = int(ts.loc[ts["year"] == selected_year, "salary"].sum())
+        diff = TARGET - year_total
+        progress = min(max(year_total / TARGET, 0.0), 1.0)
+
+        # 進捗バー
+        st.progress(progress)
+
+        # 表示
+        if compact:
+            st.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
+            st.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
+            if diff >= 0:
+                st.metric(f"{selected_year}年 残り（円）", f"{diff:,}")
+            else:
+                st.metric(f"{selected_year}年 超過（円）", f"{abs(diff):,}")
         else:
-            c2.metric("150万円を超過（円）", f"{abs(diff):,}")
-        c3.metric("達成率", f"{progress * 100:.1f}%")
+            a, b, c = st.columns(3)
+            a.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
+            if diff >= 0:
+                b.metric(f"{selected_year}年 残り（円）", f"{diff:,}")
+            else:
+                b.metric(f"{selected_year}年 超過（円）", f"{abs(diff):,}")
+            c.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
 
 with tab2:
     st.subheader("📅 年ごとの集計")
