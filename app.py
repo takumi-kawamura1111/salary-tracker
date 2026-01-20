@@ -239,7 +239,7 @@ with tab2:
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
         st.markdown(
-            "<h3 style='margin-top: 12px; margin-bottom: 4px;'>📊 年合計</h3>",
+            "<h3 style='margin-top: 12px; margin-bottom: 4px;'>年合計</h3>",
             unsafe_allow_html=True
         )
 
@@ -294,7 +294,7 @@ with tab2:
         )
 
         st.markdown(
-            "<h3 style='margin-top: 20px; margin-bottom: 4px;'>📅 年内の月別推移</h3>",
+            "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
             unsafe_allow_html=True
         )
 
