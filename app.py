@@ -240,50 +240,6 @@ with tab2:
 
 with tab3:
     st.markdown(
-        "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
-        unsafe_allow_html=True
-    )
-
-    chart_df = ys.sort_values("year").copy()
-    tick_values = list(range(0, TARGET + 1, 100_000))
-
-    bar = (
-        alt.Chart(chart_df)
-        .mark_bar()
-        .encode(
-            x=alt.X("year:O", title="年", axis=alt.Axis(labelAngle=0)),
-            y=alt.Y(
-                "year_total:Q",
-                title="年合計（円）",
-                scale=alt.Scale(domain=[0, TARGET]),
-                axis=alt.Axis(
-                    values=tick_values,
-                    grid=True,
-                    format=",.0f",
-                    labelFontSize=11,
-                    labelOverlap=False,
-                ),
-            ),
-            tooltip=[
-                alt.Tooltip("year:O", title="年"),
-                alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
-            ],
-        )
-        .properties(height=690)
-    )
-
-    target_line = (
-        alt.Chart(pd.DataFrame({"y": [TARGET]}))
-        .mark_rule(color="red", strokeWidth=2)
-        .encode(y="y:Q")
-    )
-
-    st.altair_chart(
-        (bar + target_line).configure_axis(titleFontSize=13, labelFontSize=11),
-        use_container_width=True
-    )
-
-    st.markdown(
         "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
         unsafe_allow_html=True
     )
@@ -331,6 +287,50 @@ with tab3:
         use_container_width=True
     )
 
+    st.markdown(
+        "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
+        unsafe_allow_html=True
+    )
+
+    chart_df = ys.sort_values("year").copy()
+    tick_values = list(range(0, TARGET + 1, 100_000))
+
+    bar = (
+        alt.Chart(chart_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("year:O", title="年", axis=alt.Axis(labelAngle=0)),
+            y=alt.Y(
+                "year_total:Q",
+                title="年合計（円）",
+                scale=alt.Scale(domain=[0, TARGET]),
+                axis=alt.Axis(
+                    values=tick_values,
+                    grid=True,
+                    format=",.0f",
+                    labelFontSize=11,
+                    labelOverlap=False,
+                ),
+            ),
+            tooltip=[
+                alt.Tooltip("year:O", title="年"),
+                alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
+            ],
+        )
+        .properties(height=690)
+    )
+
+    target_line = (
+        alt.Chart(pd.DataFrame({"y": [TARGET]}))
+        .mark_rule(color="red", strokeWidth=2)
+        .encode(y="y:Q")
+    )
+
+    st.altair_chart(
+        (bar + target_line).configure_axis(titleFontSize=13, labelFontSize=11),
+        use_container_width=True
+    )
+    
 with tab4:
     st.subheader("🧾 履歴")
     if df.empty:
