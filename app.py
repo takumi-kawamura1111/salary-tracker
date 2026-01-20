@@ -8,7 +8,10 @@ TARGET = 1_500_000
 DB_PATH = "salaries.db"
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
-st.title("給料トラッカー")
+st.markdown(
+    "<h1 style='text-align: center;'>給料トラッカー</h1>",
+    unsafe_allow_html=True
+)
 
 
 def get_conn():
