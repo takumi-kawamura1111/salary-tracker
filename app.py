@@ -125,7 +125,7 @@ st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
 
 # ===== 入力（上書き） =====
 with st.form("input_form", clear_on_submit=False):
-    st.subheader("入力（同じ月は上書き）")
+    st.subheader("入力")
 
     today = date.today()
     picked = st.date_input("対象月（任意の日でOK）", value=date(today.year, today.month, 1))
