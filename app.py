@@ -238,7 +238,7 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-        st.caption("年合計（棒グラフ：10万円刻み・目標150万円）")
+        st.caption("年合計")
 
         chart_df = ys.sort_values("year").copy()
 
@@ -290,7 +290,7 @@ with tab2:
             use_container_width=True
         )
 
-        st.caption("年内の月別推移（選択年：0〜20万，2万刻み）")
+        st.caption("年内の月別推移")
 
         year_ts = ts[ts["year"] == selected_year].copy()
         year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
