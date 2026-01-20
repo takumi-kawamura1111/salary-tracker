@@ -3,6 +3,7 @@ from datetime import datetime, date
 
 import pandas as pd
 import streamlit as st
+import altair as alt  
 
 TARGET = 1_500_000
 DB_PATH = "salaries.db"
