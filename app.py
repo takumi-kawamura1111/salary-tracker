@@ -108,7 +108,6 @@ compact = st.sidebar.toggle("📱 コンパクト表示（スマホ推奨）", v
 show_table = st.sidebar.toggle("🧾 履歴テーブルを表示", value=not compact)
 
 st.sidebar.divider()
-st.sidebar.caption("※ データ削除機能は安全のため無効化しています．")
 
 st.sidebar.divider()
 st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
@@ -186,7 +185,7 @@ with tab1:
         st.divider()
 
         # ===== 月別テーブル（未入力は空欄） =====
-        st.subheader("月別（未入力は空欄）")
+        st.subheader("月別")
 
         year_ts = ts[ts["year"] == selected_year].copy()
         # 例：ym = "2026-01" から月だけ取り出す
@@ -238,10 +237,10 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-        st.caption("年合計（棒グラフ）")
+        st.caption("年合計")
         st.bar_chart(ys.sort_values("year").set_index("year")[["year_total"]])
 
-        st.caption("年内の月別推移（選択年）")
+        st.caption("年内の月別推移")
         year_ts = ts[ts["year"] == selected_year].copy()
         st.bar_chart(year_ts.set_index("month_date")[["salary"]])
 
