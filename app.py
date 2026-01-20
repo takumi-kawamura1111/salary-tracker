@@ -8,7 +8,7 @@ TARGET = 1_500_000
 DB_PATH = "salaries.db"
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
-st.title("💰 給料トラッカー（150万円まで）")
+st.title("給料トラッカー")
 
 
 def get_conn():
@@ -120,11 +120,21 @@ st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
 
 # ===== 入力（上書き） =====
 with st.form("input_form", clear_on_submit=False):
-    st.subheader("入力（同じ月は上書き）")
+    st.subheader("入力")
 
+    # ===== 対象月選択（年＋月だけ） =====
     today = date.today()
-    picked = st.date_input("対象月（任意の日でOK）", value=date(today.year, today.month, 1))
-    month = month_str_from_date(picked)
+
+    # 年の候補（今年±5年くらい）
+    year_candidates = list(range(today.year - 5, today.year + 6))
+    selected_year = st.selectbox("年", year_candidates, index=year_candidates.index(today.year))
+
+    # 月の候補
+    month_candidates = list(range(1, 13))
+    selected_month = st.selectbox("月", month_candidates, index=today.month - 1)
+
+    # YYYY-MM 文字列に変換
+    month = f"{selected_year:04d}-{selected_month:02d}"
 
     default_salary = 0
     if not df.empty and (df["month"] == month).any():
