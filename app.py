@@ -101,22 +101,14 @@ def yearly_summary(ts: pd.DataFrame) -> pd.DataFrame:
 init_db()
 df = load_data()
 
-# ===== 表示設定（スマホ向け） =====
-with st.expander("表示設定（スマホ向け）", expanded=False):
-    compact = st.toggle("コンパクト表示（スマホ推奨）", value=True)
-    show_table = st.toggle("履歴テーブルを表示", value=not compact)
+# ===== サイドバー：表示設定 =====
+st.sidebar.header("表示設定")
 
-# ===== サイドバー：削除 =====
-st.sidebar.header("操作")
-if df.empty:
-    st.sidebar.info("削除はデータがあるときに使えます．")
-else:
-    months = df["month"].tolist()
-    del_month = st.sidebar.selectbox("削除する月を選択", months)
-    if st.sidebar.button("選択した月を削除", use_container_width=True):
-        delete_month(del_month)
-        st.sidebar.success(f"{del_month} を削除しました")
-        df = load_data()
+compact = st.sidebar.toggle("📱 コンパクト表示（スマホ推奨）", value=True)
+show_table = st.sidebar.toggle("🧾 履歴テーブルを表示", value=not compact)
+
+st.sidebar.divider()
+st.sidebar.caption("※ データ削除機能は安全のため無効化しています．")
 
 st.sidebar.divider()
 st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
