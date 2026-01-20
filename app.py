@@ -242,22 +242,23 @@ with tab2:
 
         chart_df = ys.sort_values("year").copy()
 
-        tick_values = list(range(0, TARGET + 1, 100_000))  # 0,100k,200k,...,1500k
+        tick_values = list(range(0, TARGET + 1, 100_000))
 
         bar = (
             alt.Chart(chart_df)
             .mark_bar()
             .encode(
-                x=alt.X("year:O", title="年", axis=alt.Axis(labelAngle=0)),
+                x=alt.X("year:O", title="年"),
                 y=alt.Y(
                     "year_total:Q",
                     title="年合計（円）",
                     scale=alt.Scale(domain=[0, TARGET]),
                     axis=alt.Axis(
-                        values=tick_values,   # ← 10万円刻みを強制
-                        grid=True,            # ← グリッド線
-                        format=",.0f",        # ← 1,500,000 のようにカンマ（M表記にしない）
-                        labelOverlap=False,   # ← 可能な限り省略しない
+                        values=tick_values,     # ← 10万円刻み
+                        grid=True,              # ← グリッド線
+                        format=",.0f",          # ← 200,000 表記
+                        labelFontSize=11,       # ← 小さめにして詰まり回避
+                        labelOverlap=False,     # ← 可能な限り省略しない
                     ),
                 ),
                 tooltip=[
@@ -265,17 +266,25 @@ with tab2:
                     alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
                 ],
             )
-            .properties(height=650)  # ← 縦に伸ばして密を回避（必要なら800でもOK）
+            .properties(
+                height=1000    # ← ★重要：縦をかなり伸ばす（スマホ対策）
+            )
         )
 
+        # --- 目標ライン ---
         target_line = (
             alt.Chart(pd.DataFrame({"y": [TARGET]}))
             .mark_rule(color="red", strokeWidth=2)
             .encode(y="y:Q")
         )
 
-        st.altair_chart((bar + target_line).configure_axis(labelFontSize=11, titleFontSize=12),
-                        use_container_width=True)
+        st.altair_chart(
+            (bar + target_line).configure_axis(
+                titleFontSize=13,
+                labelFontSize=11
+            ),
+            use_container_width=True
+        )
 
         st.caption("年内の月別推移")
         year_ts = ts[ts["year"] == selected_year].copy()
