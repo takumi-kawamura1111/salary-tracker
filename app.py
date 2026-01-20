@@ -168,15 +168,13 @@ with tab1:
         # 対象年を選択
         selected_year = st.selectbox("対象年", years)
 
-        # 年合計
+        # 年合計・進捗
         year_total = int(ts.loc[ts["year"] == selected_year, "salary"].sum())
         diff = TARGET - year_total
         progress = min(max(year_total / TARGET, 0.0), 1.0)
 
-        # 進捗バー
         st.progress(progress)
 
-        # 表示
         if compact:
             st.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
             st.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
@@ -192,6 +190,36 @@ with tab1:
             else:
                 b.metric(f"{selected_year}年 超過（円）", f"{abs(diff):,}")
             c.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
+
+        st.divider()
+
+        # ===== 月別テーブル（未入力は空欄） =====
+        st.subheader("月別（未入力は空欄）")
+
+        year_ts = ts[ts["year"] == selected_year].copy()
+        # 例：ym = "2026-01" から月だけ取り出す
+        year_ts["month_num"] = year_ts["month_date"].dt.month.astype(int)
+
+        # 1〜12月を骨格として作る
+        base = pd.DataFrame({"月": list(range(1, 13))})
+
+        # 実データを月番号で合流（未入力は NaN → 空欄表示）
+        merged = base.merge(
+            year_ts[["month_num", "salary"]].rename(columns={"month_num": "月", "salary": "給料（円）"}),
+            on="月",
+            how="left"
+        )
+
+        # 表示用：数値を「,」付き文字列にして，未入力は空欄
+        def fmt(x):
+            if pd.isna(x):
+                return ""
+            return f"{int(x):,}"
+
+        display_df = merged.copy()
+        display_df["給料（円）"] = display_df["給料（円）"].apply(fmt)
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 with tab2:
     st.subheader("📅 年ごとの集計")
