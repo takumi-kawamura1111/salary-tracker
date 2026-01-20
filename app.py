@@ -248,7 +248,11 @@ with tab2:
             alt.Chart(chart_df)
             .mark_bar()
             .encode(
-                x=alt.X("year:O", title="年"),
+                x=alt.X(
+                    "year:O",
+                    title="年",
+                    axis=alt.Axis(labelAngle=0)   # ← ★ 回転禁止
+                ),
                 y=alt.Y(
                     "year_total:Q",
                     title="年合計（円）",
