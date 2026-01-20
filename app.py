@@ -239,97 +239,108 @@ with tab2:
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
 with tab3:
-    st.markdown(
-        "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
-        unsafe_allow_html=True
-    )
+    if df.empty:
+        st.info("データがありません．")
+    else:
+        # ★ グラフ用：年を選択（このタブ内で完結）
+        ts = build_timeseries(df)
+        ys = yearly_summary(ts)
 
-    year_ts = ts[ts["year"] == selected_year].copy()
-    year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
-    year_ts["month_label"] = year_ts["month_date"].dt.strftime("%m")
+        years = sorted(ts["year"].unique().tolist(), reverse=True)
+        selected_year_graph = st.selectbox("対象年（グラフ）", years, key="graph_year")
 
-    month_target = 200_000
-    month_tick_values = list(range(0, month_target + 1, 20_000))
-
-    month_bar = (
-        alt.Chart(year_ts)
-        .mark_bar()
-        .encode(
-            x=alt.X("month_label:O", title="月", axis=alt.Axis(labelAngle=0)),
-            y=alt.Y(
-                "salary:Q",
-                title="給料（円）",
-                scale=alt.Scale(domain=[0, month_target]),
-                axis=alt.Axis(
-                    values=month_tick_values,
-                    grid=True,
-                    format=",.0f",
-                    labelFontSize=11,
-                    labelOverlap=False,
-                ),
-            ),
-            tooltip=[
-                alt.Tooltip("ym:N", title="年月"),
-                alt.Tooltip("salary:Q", title="給料（円）", format=",.0f"),
-            ],
+        # 以降は selected_year の代わりに selected_year_graph を使う
+        st.markdown(
+            "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
+            unsafe_allow_html=True
         )
-        .properties(height=520)
-    )
 
-    cap_line = (
-        alt.Chart(pd.DataFrame({"y": [month_target]}))
-        .mark_rule(color="red", strokeWidth=2)
-        .encode(y="y:Q")
-    )
+        year_ts = ts[ts["year"] == selected_year_graph].copy()
+        year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
+        year_ts["month_label"] = year_ts["month_date"].dt.strftime("%m")
 
-    st.altair_chart(
-        (month_bar + cap_line).configure_axis(titleFontSize=13, labelFontSize=11),
-        use_container_width=True
-    )
+        month_target = 200_000
+        month_tick_values = list(range(0, month_target + 1, 20_000))
 
-    st.markdown(
-        "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
-        unsafe_allow_html=True
-    )
-
-    chart_df = ys.sort_values("year").copy()
-    tick_values = list(range(0, TARGET + 1, 100_000))
-
-    bar = (
-        alt.Chart(chart_df)
-        .mark_bar()
-        .encode(
-            x=alt.X("year:O", title="年", axis=alt.Axis(labelAngle=0)),
-            y=alt.Y(
-                "year_total:Q",
-                title="年合計（円）",
-                scale=alt.Scale(domain=[0, TARGET]),
-                axis=alt.Axis(
-                    values=tick_values,
-                    grid=True,
-                    format=",.0f",
-                    labelFontSize=11,
-                    labelOverlap=False,
+        month_bar = (
+            alt.Chart(year_ts)
+            .mark_bar()
+            .encode(
+                x=alt.X("month_label:O", title="月", axis=alt.Axis(labelAngle=0)),
+                y=alt.Y(
+                    "salary:Q",
+                    title="給料（円）",
+                    scale=alt.Scale(domain=[0, month_target]),
+                    axis=alt.Axis(
+                        values=month_tick_values,
+                        grid=True,
+                        format=",.0f",
+                        labelFontSize=11,
+                        labelOverlap=False,
+                    ),
                 ),
-            ),
-            tooltip=[
-                alt.Tooltip("year:O", title="年"),
-                alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
-            ],
+                tooltip=[
+                    alt.Tooltip("ym:N", title="年月"),
+                    alt.Tooltip("salary:Q", title="給料（円）", format=",.0f"),
+                ],
+            )
+            .properties(height=520)
         )
-        .properties(height=690)
-    )
 
-    target_line = (
-        alt.Chart(pd.DataFrame({"y": [TARGET]}))
-        .mark_rule(color="red", strokeWidth=2)
-        .encode(y="y:Q")
-    )
+        cap_line = (
+            alt.Chart(pd.DataFrame({"y": [month_target]}))
+            .mark_rule(color="red", strokeWidth=2)
+            .encode(y="y:Q")
+        )
 
-    st.altair_chart(
-        (bar + target_line).configure_axis(titleFontSize=13, labelFontSize=11),
-        use_container_width=True
-    )
+        st.altair_chart(
+            (month_bar + cap_line).configure_axis(titleFontSize=13, labelFontSize=11),
+            use_container_width=True
+        )
+
+        st.markdown(
+            "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
+            unsafe_allow_html=True
+        )
+
+        chart_df = ys.sort_values("year").copy()
+        tick_values = list(range(0, TARGET + 1, 100_000))
+
+        bar = (
+            alt.Chart(chart_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("year:O", title="年", axis=alt.Axis(labelAngle=0)),
+                y=alt.Y(
+                    "year_total:Q",
+                    title="年合計（円）",
+                    scale=alt.Scale(domain=[0, TARGET]),
+                    axis=alt.Axis(
+                        values=tick_values,
+                        grid=True,
+                        format=",.0f",
+                        labelFontSize=11,
+                        labelOverlap=False,
+                    ),
+                ),
+                tooltip=[
+                    alt.Tooltip("year:O", title="年"),
+                    alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
+                ],
+            )
+            .properties(height=690)
+        )
+
+        target_line = (
+            alt.Chart(pd.DataFrame({"y": [TARGET]}))
+            .mark_rule(color="red", strokeWidth=2)
+            .encode(y="y:Q")
+        )
+
+        st.altair_chart(
+            (bar + target_line).configure_axis(titleFontSize=13, labelFontSize=11),
+            use_container_width=True
+        )
     
 with tab4:
     st.subheader("🧾 履歴")
