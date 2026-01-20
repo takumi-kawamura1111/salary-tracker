@@ -238,7 +238,10 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-        st.caption("年合計")
+        st.markdown(
+            "<h3 style='margin-top: 12px; margin-bottom: 4px;'>📊 年合計</h3>",
+            unsafe_allow_html=True
+        )
 
         chart_df = ys.sort_values("year").copy()
 
@@ -290,7 +293,10 @@ with tab2:
             use_container_width=True
         )
 
-        st.caption("年内の月別推移")
+        st.markdown(
+            "<h3 style='margin-top: 20px; margin-bottom: 4px;'>📅 年内の月別推移</h3>",
+            unsafe_allow_html=True
+        )
 
         year_ts = ts[ts["year"] == selected_year].copy()
         year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
