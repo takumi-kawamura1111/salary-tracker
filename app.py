@@ -290,9 +290,58 @@ with tab2:
             use_container_width=True
         )
 
-        st.caption("年内の月別推移")
+        st.caption("年内の月別推移（選択年：0〜20万，2万刻み）")
+
         year_ts = ts[ts["year"] == selected_year].copy()
-        st.bar_chart(year_ts.set_index("month_date")[["salary"]])
+        year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
+
+        # 表示用：月ラベル（01〜12）
+        year_ts["month_label"] = year_ts["month_date"].dt.strftime("%m")
+
+        # 2万円刻み（0〜20万）
+        month_target = 200_000
+        month_tick_values = list(range(0, month_target + 1, 20_000))
+
+        month_bar = (
+            alt.Chart(year_ts)
+            .mark_bar()
+            .encode(
+                x=alt.X(
+                    "month_label:O",
+                    title="月",
+                    axis=alt.Axis(labelAngle=0)  # 回転させない
+                ),
+                y=alt.Y(
+                    "salary:Q",
+                    title="給料（円）",
+                    scale=alt.Scale(domain=[0, month_target]),
+                    axis=alt.Axis(
+                        values=month_tick_values,  # 2万刻み
+                        grid=True,
+                        format=",.0f",             # 20,000 表記
+                        labelFontSize=11,
+                        labelOverlap=False,
+                    ),
+                ),
+                tooltip=[
+                    alt.Tooltip("ym:N", title="年月"),
+                    alt.Tooltip("salary:Q", title="給料（円）", format=",.0f"),
+                ],
+            )
+            .properties(height=520)
+        )
+
+        # 20万円ライン（上限ライン）を薄く表示したい場合（不要なら消してOK）
+        cap_line = (
+            alt.Chart(pd.DataFrame({"y": [month_target]}))
+            .mark_rule(color="red", strokeWidth=2)
+            .encode(y="y:Q")
+        )
+
+        st.altair_chart(
+            (month_bar + cap_line).configure_axis(titleFontSize=13, labelFontSize=11),
+            use_container_width=True
+        )
 
 with tab3:
     st.subheader("🧾 履歴")
