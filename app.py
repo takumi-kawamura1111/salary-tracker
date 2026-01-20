@@ -8,7 +8,7 @@ TARGET = 1_500_000
 DB_PATH = "salaries.db"
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
-st.title("💰 給料トラッカー（150万円まで）")
+st.title("給料トラッカー")
 
 
 def get_conn():
