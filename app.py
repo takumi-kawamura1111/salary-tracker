@@ -238,7 +238,7 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-with tab4:
+with tab3:
     st.markdown(
         "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
         unsafe_allow_html=True
