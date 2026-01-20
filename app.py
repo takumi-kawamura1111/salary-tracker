@@ -237,8 +237,30 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-        st.caption("年合計")
-        st.bar_chart(ys.sort_values("year").set_index("year")[["year_total"]])
+        st.caption("年合計（棒グラフ：目標150万円まで）")
+
+        chart_df = ys.sort_values("year").copy()
+
+        bar = (
+            alt.Chart(chart_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("year:O", title="年"),
+                y=alt.Y(
+                    "year_total:Q",
+                    title="年合計（円）",
+                    scale=alt.Scale(domain=[0, TARGET])   # ← 縦軸固定
+                ),
+                tooltip=["year", "year_total"]
+            )
+        )
+
+        # 目標ライン（150万円）
+        target_line = alt.Chart(
+            pd.DataFrame({"y": [TARGET]})
+        ).mark_rule(color="red").encode(y="y:Q")
+
+        st.altair_chart(bar + target_line, use_container_width=True)
 
         st.caption("年内の月別推移")
         year_ts = ts[ts["year"] == selected_year].copy()
