@@ -238,28 +238,45 @@ with tab2:
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
             c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
 
-        st.caption("年合計（棒グラフ：目標150万円まで）")
+        st.caption("年合計（棒グラフ：10万円刻み・目標150万円）")
 
         chart_df = ys.sort_values("year").copy()
+
+        # 10万円刻みの目盛り
+        tick_values = list(range(0, TARGET + 1, 100_000))
 
         bar = (
             alt.Chart(chart_df)
             .mark_bar()
             .encode(
-                x=alt.X("year:O", title="年"),
+                x=alt.X(
+                    "year:O",
+                    title="年",
+                    axis=alt.Axis(labelAngle=0)
+                ),
                 y=alt.Y(
                     "year_total:Q",
                     title="年合計（円）",
-                    scale=alt.Scale(domain=[0, TARGET])   # ← 縦軸固定
+                    scale=alt.Scale(domain=[0, TARGET]),
+                    axis=alt.Axis(
+                        values=tick_values,      # ← 10万円刻み
+                        grid=True,               # ← グリッド線ON
+                        format="~s"              # ← 100k, 200k 表記（日本円でも視認性◎）
+                    ),
                 ),
                 tooltip=["year", "year_total"]
+            )
+            .properties(
+                height=420   # ← 縦方向を広げる（スマホでも見やすい）
             )
         )
 
         # 目標ライン（150万円）
-        target_line = alt.Chart(
-            pd.DataFrame({"y": [TARGET]})
-        ).mark_rule(color="red").encode(y="y:Q")
+        target_line = (
+            alt.Chart(pd.DataFrame({"y": [TARGET]}))
+            .mark_rule(color="red", strokeWidth=2)
+            .encode(y="y:Q")
+        )
 
         st.altair_chart(bar + target_line, use_container_width=True)
 
