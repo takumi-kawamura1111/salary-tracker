@@ -3,7 +3,8 @@ from datetime import datetime, date
 
 import pandas as pd
 import streamlit as st
-import altair as alt  
+import altair as alt 
+import os 
 
 TARGET = 1_500_000
 DB_PATH = "salaries.db"
@@ -71,6 +72,18 @@ def load_data() -> pd.DataFrame:
     df["salary"] = pd.to_numeric(df["salary"], errors="coerce").fillna(0).astype(int)
     return df
 
+def auto_backup_csv(df: pd.DataFrame):
+    if df.empty:
+        return
+
+    os.makedirs("backup", exist_ok=True)
+
+    path = "backup/salary_backup_latest.csv"
+    df.sort_values("month").to_csv(
+        path,
+        index=False,
+        encoding="utf-8-sig"
+    )
 
 def build_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
@@ -101,6 +114,7 @@ def yearly_summary(ts: pd.DataFrame) -> pd.DataFrame:
 # 初期化
 init_db()
 df = load_data()
+auto_backup_csv(df)
 
 # ===== サイドバー：表示設定 =====
 st.sidebar.header("表示設定")
