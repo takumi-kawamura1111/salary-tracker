@@ -109,7 +109,59 @@ compact = st.sidebar.toggle("📱 コンパクト表示（スマホ推奨）", v
 show_table = st.sidebar.toggle("🧾 履歴テーブルを表示", value=not compact)
 
 st.sidebar.divider()
+# ===== サイドバー：バックアップ（CSV） =====
+st.sidebar.subheader("バックアップ（CSV）")
 
+if df.empty:
+    st.sidebar.caption("データがないためバックアップできません．")
+else:
+    export_df = df.sort_values("month").copy()
+    csv_bytes = export_df.to_csv(index=False).encode("utf-8-sig")  # Excelでも文字化けしにくい
+    st.sidebar.download_button(
+        label="📤 CSVバックアップをダウンロード",
+        data=csv_bytes,
+        file_name="salary_backup.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+st.sidebar.caption("復元は「このアプリから出したCSV」を使ってください．")
+uploaded = st.sidebar.file_uploader("📥 CSVから復元", type=["csv"], accept_multiple_files=False)
+
+if uploaded is not None:
+    try:
+        restore_df = pd.read_csv(uploaded)
+        if not {"month", "salary"}.issubset(set(restore_df.columns)):
+            st.sidebar.error("CSV形式が違います（month, salary 列が必要）")
+        else:
+            # updated_at が無ければ今の時刻で補完
+            if "updated_at" not in restore_df.columns:
+                restore_df["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+            restore_df["month"] = restore_df["month"].astype(str)
+            restore_df["salary"] = pd.to_numeric(restore_df["salary"], errors="coerce").fillna(0).astype(int)
+            restore_df["updated_at"] = restore_df["updated_at"].astype(str)
+
+            # 1行ずつ upsert（同じ月は上書き）
+            with get_conn() as conn:
+                for _, r in restore_df.iterrows():
+                    conn.execute(
+                        """
+                        INSERT INTO salaries (month, salary, updated_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(month) DO UPDATE SET
+                            salary=excluded.salary,
+                            updated_at=excluded.updated_at
+                        """,
+                        (r["month"], int(r["salary"]), r["updated_at"]),
+                    )
+                conn.commit()
+
+            st.sidebar.success("復元しました．画面を更新します．")
+            st.rerun()
+
+    except Exception as e:
+        st.sidebar.error(f"復元に失敗しました：{e}")
 st.sidebar.divider()
 st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
 
