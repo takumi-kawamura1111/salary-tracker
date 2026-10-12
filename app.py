@@ -1,96 +1,137 @@
-import sqlite3
-from datetime import datetime, date
+from datetime import date, datetime
+import os
 
+import altair as alt
 import pandas as pd
+from sqlalchemy import create_engine, text
 import streamlit as st
-import altair as alt 
-import os 
 
 TARGET = 1_500_000
-DB_PATH = "salaries.db"
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
 st.markdown(
-    "<h1 style='text-align: center;'>給料トラッカー</h1>",
-    unsafe_allow_html=True
+    "<h1 style='text-align: center;'>給料トラッカー</h1>", unsafe_allow_html=True
 )
 
 
-def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+# ===== データベース接続 =====
+def get_db_url() -> str:
+    # Streamlit Secrets → 環境変数 → ローカルSQLite の順で接続文字列を取得
+    db_url = None
+    try:
+        if "DATABASE_URL" in st.secrets:
+            db_url = st.secrets["DATABASE_URL"]
+        elif "postgres" in st.secrets and "url" in st.secrets["postgres"]:
+            db_url = st.secrets["postgres"]["url"]
+    except Exception:
+        # secrets.toml が無い環境
+        pass
+    if not db_url:
+        db_url = os.environ.get("DATABASE_URL", "sqlite:///salaries.db")
+
+    # PostgreSQLの古い接頭辞 (postgres://) を postgresql:// に補正
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    return db_url
+
+
+@st.cache_resource
+def get_engine():
+    # pool_pre_ping: アイドル中にサーバー側で切られた接続を使う前に検知して張り直す
+    return create_engine(get_db_url(), pool_pre_ping=True)
+
+
+def is_sqlite() -> bool:
+    return get_engine().dialect.name == "sqlite"
 
 
 def init_db():
-    with get_conn() as conn:
+    engine = get_engine()
+    with engine.begin() as conn:
         conn.execute(
-            """
+            text(
+                """
             CREATE TABLE IF NOT EXISTS salaries (
-                month TEXT PRIMARY KEY,
+                month VARCHAR(7) PRIMARY KEY,
                 salary INTEGER NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at VARCHAR(30) NOT NULL
             )
             """
+            )
         )
-        conn.commit()
-
-
-def month_str_from_date(d: date) -> str:
-    return f"{d.year:04d}-{d.month:02d}"
 
 
 def upsert_month(month: str, salary: int):
     now = datetime.now().isoformat(timespec="seconds")
-    with get_conn() as conn:
+    engine = get_engine()
+    with engine.begin() as conn:
         conn.execute(
-            """
+            text(
+                """
             INSERT INTO salaries (month, salary, updated_at)
-            VALUES (?, ?, ?)
+            VALUES (:month, :salary, :updated_at)
             ON CONFLICT(month) DO UPDATE SET
-                salary=excluded.salary,
-                updated_at=excluded.updated_at
-            """,
-            (month, int(salary), now),
+                salary = EXCLUDED.salary,
+                updated_at = EXCLUDED.updated_at
+            """
+            ),
+            {"month": month, "salary": int(salary), "updated_at": now},
         )
-        conn.commit()
 
 
 def delete_month(month: str):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM salaries WHERE month = ?", (month,))
-        conn.commit()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM salaries WHERE month = :month"), {"month": month}
+        )
 
 
 def load_data() -> pd.DataFrame:
-    with get_conn() as conn:
-        df = pd.read_sql_query(
-            "SELECT month, salary, updated_at FROM salaries ORDER BY month",
-            conn,
-        )
+    engine = get_engine()
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql_query(
+                text(
+                    "SELECT month, salary, updated_at FROM salaries ORDER BY month"
+                ),
+                conn,
+            )
+    except Exception as e:
+        # 空表示にすると「データが消えた」ように見えるので，エラーとして止める
+        st.error(f"データの読み込みに失敗しました：{e}")
+        st.stop()
+
     if df.empty:
         return df
     df["month"] = df["month"].astype(str)
-    df["salary"] = pd.to_numeric(df["salary"], errors="coerce").fillna(0).astype(int)
+    df["salary"] = (
+        pd.to_numeric(df["salary"], errors="coerce").fillna(0).astype(int)
+    )
     return df
+
 
 def auto_backup_csv(df: pd.DataFrame):
     if df.empty:
         return
 
     os.makedirs("backup", exist_ok=True)
-
     path = "backup/salary_backup_latest.csv"
-    df.sort_values("month").to_csv(
-        path,
-        index=False,
-        encoding="utf-8-sig"
-    )
+    df.sort_values("month").to_csv(path, index=False, encoding="utf-8-sig")
+
 
 def build_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     out = df.copy()
-    out["month_date"] = pd.to_datetime(out["month"] + "-01", format="%Y-%m-%d", errors="coerce")
-    out = out.dropna(subset=["month_date"]).sort_values("month_date").reset_index(drop=True)
+    out["month_date"] = pd.to_datetime(
+        out["month"] + "-01", format="%Y-%m-%d", errors="coerce"
+    )
+    out = (
+        out.dropna(subset=["month_date"])
+        .sort_values("month_date")
+        .reset_index(drop=True)
+    )
     out["year"] = out["month_date"].dt.year.astype(int)
     out["ym"] = out["month_date"].dt.strftime("%Y-%m")
     out["cumulative"] = out["salary"].cumsum()
@@ -130,7 +171,7 @@ if df.empty:
     st.sidebar.caption("データがないためバックアップできません．")
 else:
     export_df = df.sort_values("month").copy()
-    csv_bytes = export_df.to_csv(index=False).encode("utf-8-sig")  # Excelでも文字化けしにくい
+    csv_bytes = export_df.to_csv(index=False).encode("utf-8-sig")
     st.sidebar.download_button(
         label="📤 CSVバックアップをダウンロード",
         data=csv_bytes,
@@ -140,68 +181,93 @@ else:
     )
 
 st.sidebar.caption("復元は「このアプリから出したCSV」を使ってください．")
-uploaded = st.sidebar.file_uploader("📥 CSVから復元", type=["csv"], accept_multiple_files=False)
+uploaded = st.sidebar.file_uploader(
+    "📥 CSVから復元", type=["csv"], accept_multiple_files=False
+)
 
 if uploaded is not None:
     try:
         restore_df = pd.read_csv(uploaded)
         if not {"month", "salary"}.issubset(set(restore_df.columns)):
-            st.sidebar.error("CSV形式が違います（month, salary 列が必要）")
+            st.sidebar.error(
+                "CSV形式が違います（month, salary 列が必要）"
+            )
         else:
-            # updated_at が無ければ今の時刻で補完
             if "updated_at" not in restore_df.columns:
-                restore_df["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                restore_df["updated_at"] = datetime.now().isoformat(
+                    timespec="seconds"
+                )
 
             restore_df["month"] = restore_df["month"].astype(str)
-            restore_df["salary"] = pd.to_numeric(restore_df["salary"], errors="coerce").fillna(0).astype(int)
+            restore_df["salary"] = (
+                pd.to_numeric(restore_df["salary"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
             restore_df["updated_at"] = restore_df["updated_at"].astype(str)
 
-            # 1行ずつ upsert（同じ月は上書き）
-            with get_conn() as conn:
+            engine = get_engine()
+            with engine.begin() as conn:
                 for _, r in restore_df.iterrows():
                     conn.execute(
-                        """
+                        text(
+                            """
                         INSERT INTO salaries (month, salary, updated_at)
-                        VALUES (?, ?, ?)
+                        VALUES (:month, :salary, :updated_at)
                         ON CONFLICT(month) DO UPDATE SET
-                            salary=excluded.salary,
-                            updated_at=excluded.updated_at
-                        """,
-                        (r["month"], int(r["salary"]), r["updated_at"]),
+                            salary = EXCLUDED.salary,
+                            updated_at = EXCLUDED.updated_at
+                        """
+                        ),
+                        {
+                            "month": str(r["month"]),
+                            "salary": int(r["salary"]),
+                            "updated_at": str(r["updated_at"]),
+                        },
                     )
-                conn.commit()
 
             st.sidebar.success("復元しました．画面を更新します．")
             st.rerun()
 
     except Exception as e:
         st.sidebar.error(f"復元に失敗しました：{e}")
+
 st.sidebar.divider()
-st.sidebar.caption(f"保存先：{DB_PATH}（SQLite）")
+if is_sqlite():
+    st.sidebar.warning(
+        "保存先：SQLite（ローカルファイル）\n\n"
+        "クラウド上ではアプリの再起動・スリープでデータが消えます．"
+        "Secrets に DATABASE_URL を設定してください．"
+    )
+else:
+    st.sidebar.caption(f"保存先：{get_engine().dialect.name}")
 
 # ===== 入力（上書き） =====
 with st.form("input_form", clear_on_submit=False):
     st.subheader("入力")
 
-    # ===== 対象月選択（年＋月だけ） =====
     today = date.today()
-
-    # 年の候補（今年±5年くらい）
     year_candidates = list(range(today.year - 5, today.year + 6))
-    selected_year = st.selectbox("年", year_candidates, index=year_candidates.index(today.year))
+    selected_year = st.selectbox(
+        "年", year_candidates, index=year_candidates.index(today.year)
+    )
 
-    # 月の候補
     month_candidates = list(range(1, 13))
-    selected_month = st.selectbox("月", month_candidates, index=today.month - 1)
+    selected_month = st.selectbox(
+        "月", month_candidates, index=today.month - 1
+    )
 
-    # YYYY-MM 文字列に変換
     month = f"{selected_year:04d}-{selected_month:02d}"
 
     default_salary = 0
     if not df.empty and (df["month"] == month).any():
-        default_salary = int(df.loc[df["month"] == month, "salary"].iloc[0])
+        default_salary = int(
+            df.loc[df["month"] == month, "salary"].iloc[0]
+        )
 
-    salary = st.number_input("月々の給料（円）", min_value=0, step=1000, value=default_salary)
+    salary = st.number_input(
+        "月々の給料（円）", min_value=0, step=1000, value=default_salary
+    )
     submitted = st.form_submit_button("保存（上書き）")
 
 if submitted:
@@ -211,8 +277,10 @@ if submitted:
 
 st.divider()
 
-# ===== タブ（スマホ向けナビ） =====
-tab1, tab2, tab3, tab4 = st.tabs(["✅ 進捗", "📅 年集計", "📈 グラフ", "🧾 履歴"])
+# ===== タブ =====
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["✅ 進捗", "📅 年集計", "📈 グラフ", "🧾 履歴"]
+)
 
 with tab1:
     st.subheader("📅 年別進捗")
@@ -222,12 +290,11 @@ with tab1:
     else:
         ts = build_timeseries(df)
         years = sorted(ts["year"].unique().tolist(), reverse=True)
-
-        # 対象年を選択
         selected_year = st.selectbox("対象年", years)
 
-        # 年合計・進捗
-        year_total = int(ts.loc[ts["year"] == selected_year, "salary"].sum())
+        year_total = int(
+            ts.loc[ts["year"] == selected_year, "salary"].sum()
+        )
         diff = TARGET - year_total
         progress = min(max(year_total / TARGET, 0.0), 1.0)
 
@@ -251,24 +318,19 @@ with tab1:
 
         st.divider()
 
-        # ===== 月別テーブル（未入力は空欄） =====
         st.subheader("月別")
-
         year_ts = ts[ts["year"] == selected_year].copy()
-        # 例：ym = "2026-01" から月だけ取り出す
         year_ts["month_num"] = year_ts["month_date"].dt.month.astype(int)
 
-        # 1〜12月を骨格として作る
         base = pd.DataFrame({"月": list(range(1, 13))})
-
-        # 実データを月番号で合流（未入力は NaN → 空欄表示）
         merged = base.merge(
-            year_ts[["month_num", "salary"]].rename(columns={"month_num": "月", "salary": "給料（円）"}),
+            year_ts[["month_num", "salary"]].rename(
+                columns={"month_num": "月", "salary": "給料（円）"}
+            ),
             on="月",
-            how="left"
+            how="left",
         )
 
-        # 表示用：数値を「,」付き文字列にして，未入力は空欄
         def fmt(x):
             if pd.isna(x):
                 return ""
@@ -290,35 +352,45 @@ with tab2:
         years = sorted(ts["year"].unique().tolist(), reverse=True)
         selected_year = st.selectbox("表示する年", years)
 
-        year_total = int(ys.loc[ys["year"] == selected_year, "year_total"].iloc[0])
-        month_avg = int(ys.loc[ys["year"] == selected_year, "month_avg"].iloc[0])
-        max_month_salary = int(ys.loc[ys["year"] == selected_year, "max_month_salary"].iloc[0])
+        year_total = int(
+            ys.loc[ys["year"] == selected_year, "year_total"].iloc[0]
+        )
+        month_avg = int(
+            ys.loc[ys["year"] == selected_year, "month_avg"].iloc[0]
+        )
+        max_month_salary = int(
+            ys.loc[ys["year"] == selected_year, "max_month_salary"].iloc[0]
+        )
 
         if compact:
             st.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
             st.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
-            st.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
+            st.metric(
+                f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}"
+            )
         else:
             a, b, c = st.columns(3)
             a.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
             b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
-            c.metric(f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}")
+            c.metric(
+                f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}"
+            )
 
 with tab3:
     if df.empty:
         st.info("データがありません．")
     else:
-        # ★ グラフ用：年を選択（このタブ内で完結）
         ts = build_timeseries(df)
         ys = yearly_summary(ts)
 
         years = sorted(ts["year"].unique().tolist(), reverse=True)
-        selected_year_graph = st.selectbox("対象年（グラフ）", years, key="graph_year")
+        selected_year_graph = st.selectbox(
+            "対象年（グラフ）", years, key="graph_year"
+        )
 
-        # 以降は selected_year の代わりに selected_year_graph を使う
         st.markdown(
             "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         year_ts = ts[ts["year"] == selected_year_graph].copy()
@@ -332,7 +404,9 @@ with tab3:
             alt.Chart(year_ts)
             .mark_bar()
             .encode(
-                x=alt.X("month_label:O", title="月", axis=alt.Axis(labelAngle=0)),
+                x=alt.X(
+                    "month_label:O", title="月", axis=alt.Axis(labelAngle=0)
+                ),
                 y=alt.Y(
                     "salary:Q",
                     title="給料（円）",
@@ -347,7 +421,9 @@ with tab3:
                 ),
                 tooltip=[
                     alt.Tooltip("ym:N", title="年月"),
-                    alt.Tooltip("salary:Q", title="給料（円）", format=",.0f"),
+                    alt.Tooltip(
+                        "salary:Q", title="給料（円）", format=",.0f"
+                    ),
                 ],
             )
             .properties(height=520)
@@ -360,13 +436,15 @@ with tab3:
         )
 
         st.altair_chart(
-            (month_bar + cap_line).configure_axis(titleFontSize=13, labelFontSize=11),
-            use_container_width=True
+            (month_bar + cap_line).configure_axis(
+                titleFontSize=13, labelFontSize=11
+            ),
+            use_container_width=True,
         )
 
         st.markdown(
             "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         chart_df = ys.sort_values("year").copy()
@@ -391,7 +469,9 @@ with tab3:
                 ),
                 tooltip=[
                     alt.Tooltip("year:O", title="年"),
-                    alt.Tooltip("year_total:Q", title="年合計（円）", format=",.0f"),
+                    alt.Tooltip(
+                        "year_total:Q", title="年合計（円）", format=",.0f"
+                    ),
                 ],
             )
             .properties(height=690)
@@ -404,10 +484,12 @@ with tab3:
         )
 
         st.altair_chart(
-            (bar + target_line).configure_axis(titleFontSize=13, labelFontSize=11),
-            use_container_width=True
+            (bar + target_line).configure_axis(
+                titleFontSize=13, labelFontSize=11
+            ),
+            use_container_width=True,
         )
-    
+
 with tab4:
     st.subheader("🧾 履歴")
     if df.empty:
