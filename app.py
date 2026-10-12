@@ -29,9 +29,11 @@ def get_db_url() -> str:
     if not db_url:
         db_url = os.environ.get("DATABASE_URL", "sqlite:///salaries.db")
 
-    # PostgreSQLの古い接頭辞 (postgres://) を postgresql:// に補正
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    # ドライバを psycopg (v3) に固定（SQLAlchemyのバージョンで既定ドライバが変わるため）
+    for prefix in ("postgres://", "postgresql://"):
+        if db_url.startswith(prefix):
+            db_url = "postgresql+psycopg://" + db_url[len(prefix):]
+            break
     return db_url
 
 
