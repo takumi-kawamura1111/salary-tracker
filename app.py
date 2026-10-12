@@ -179,7 +179,7 @@ else:
         data=csv_bytes,
         file_name="salary_backup.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
 
 st.sidebar.caption("復元は「このアプリから出したCSV」を使ってください．")
@@ -244,84 +244,78 @@ if is_sqlite():
 else:
     st.sidebar.caption(f"保存先：{get_engine().dialect.name}")
 
+def nice_upper(max_value: int, floor: int, step: int) -> int:
+    # 目盛り幅 step 単位で切り上げた上限（最低でも floor）
+    upper = max(int(max_value), floor)
+    return -(-upper // step) * step
+
+
+today = date.today()
+ts = build_timeseries(df)
+
+# 保存直後の再実行で通知を出す
+if "saved_month" in st.session_state:
+    st.toast(f"{st.session_state.pop('saved_month')} を保存しました", icon="✅")
+
+# ===== 表示する年（全タブ共通） =====
+data_years = set(ts["year"].unique().tolist()) if not ts.empty else set()
+years = sorted(data_years | {today.year}, reverse=True)
+selected_year = st.selectbox("表示する年", years, index=years.index(today.year))
+
+year_ts = (
+    ts[ts["year"] == selected_year].copy() if not ts.empty else pd.DataFrame()
+)
+year_total = int(year_ts["salary"].sum()) if not year_ts.empty else 0
+diff = TARGET - year_total
+progress = min(max(year_total / TARGET, 0.0), 1.0)
+
+# ===== 進捗（ファーストビュー） =====
+st.progress(progress, text=f"{selected_year}年 達成率 {progress * 100:.1f}%")
+a, b = st.columns(2)
+a.metric("合計（円）", f"{year_total:,}")
+if diff >= 0:
+    b.metric("残り（円）", f"{diff:,}")
+else:
+    b.metric("超過（円）", f"{abs(diff):,}")
+
 # ===== 入力（上書き） =====
-with st.form("input_form", clear_on_submit=False):
+with st.container(border=True):
     st.subheader("入力")
 
-    today = date.today()
     year_candidates = list(range(today.year - 5, today.year + 6))
-    selected_year = st.selectbox(
+    c1, c2 = st.columns(2)
+    input_year = c1.selectbox(
         "年", year_candidates, index=year_candidates.index(today.year)
     )
+    input_month = c2.selectbox("月", list(range(1, 13)), index=today.month - 1)
+    month = f"{input_year:04d}-{input_month:02d}"
 
-    month_candidates = list(range(1, 13))
-    selected_month = st.selectbox(
-        "月", month_candidates, index=today.month - 1
-    )
+    saved = df.loc[df["month"] == month, "salary"] if not df.empty else []
+    default_salary = int(saved.iloc[0]) if len(saved) else 0
 
-    month = f"{selected_year:04d}-{selected_month:02d}"
-
-    default_salary = 0
-    if not df.empty and (df["month"] == month).any():
-        default_salary = int(
-            df.loc[df["month"] == month, "salary"].iloc[0]
-        )
-
+    # 月ごとに key を変えて，選んだ月の保存済み金額を初期値として表示する
     salary = st.number_input(
-        "月々の給料（円）", min_value=0, step=1000, value=default_salary
+        "月々の給料（円）",
+        min_value=0,
+        step=1000,
+        value=default_salary,
+        key=f"salary_{month}",
     )
-    submitted = st.form_submit_button("保存（上書き）")
+    if len(saved):
+        st.caption(f"保存済み：{default_salary:,} 円（保存すると上書きされます）")
 
-if submitted:
-    upsert_month(month, int(salary))
-    st.success(f"{month} を保存しました（上書き）")
-    df = load_data()
-
-st.divider()
+    if st.button("保存", type="primary", width="stretch"):
+        upsert_month(month, int(salary))
+        st.session_state["saved_month"] = month
+        st.rerun()
 
 # ===== タブ =====
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["✅ 進捗", "📅 年集計", "📈 グラフ", "🧾 履歴"]
-)
+tab1, tab2, tab3, tab4 = st.tabs(["📋 月別", "📅 年集計", "📈 グラフ", "🧾 履歴"])
 
 with tab1:
-    st.subheader("📅 年別進捗")
-
-    if df.empty:
-        st.info("データがありません．")
+    if year_ts.empty:
+        st.info(f"{selected_year}年のデータがありません．")
     else:
-        ts = build_timeseries(df)
-        years = sorted(ts["year"].unique().tolist(), reverse=True)
-        selected_year = st.selectbox("対象年", years)
-
-        year_total = int(
-            ts.loc[ts["year"] == selected_year, "salary"].sum()
-        )
-        diff = TARGET - year_total
-        progress = min(max(year_total / TARGET, 0.0), 1.0)
-
-        st.progress(progress)
-
-        if compact:
-            st.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
-            st.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
-            if diff >= 0:
-                st.metric(f"{selected_year}年 残り（円）", f"{diff:,}")
-            else:
-                st.metric(f"{selected_year}年 超過（円）", f"{abs(diff):,}")
-        else:
-            a, b, c = st.columns(3)
-            a.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
-            if diff >= 0:
-                b.metric(f"{selected_year}年 残り（円）", f"{diff:,}")
-            else:
-                b.metric(f"{selected_year}年 超過（円）", f"{abs(diff):,}")
-            c.metric(f"{selected_year}年 達成率", f"{progress * 100:.1f}%")
-
-        st.divider()
-
-        st.subheader("月別")
-        year_ts = ts[ts["year"] == selected_year].copy()
         year_ts["month_num"] = year_ts["month_date"].dt.month.astype(int)
 
         base = pd.DataFrame({"月": list(range(1, 13))})
@@ -341,108 +335,92 @@ with tab1:
         display_df = merged.copy()
         display_df["給料（円）"] = display_df["給料（円）"].apply(fmt)
 
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
 
 with tab2:
-    st.subheader("📅 年ごとの集計")
-    if df.empty:
-        st.info("データを追加すると年集計が表示されます．")
+    if year_ts.empty:
+        st.info(f"{selected_year}年のデータがありません．")
     else:
-        ts = build_timeseries(df)
         ys = yearly_summary(ts)
-
-        years = sorted(ts["year"].unique().tolist(), reverse=True)
-        selected_year = st.selectbox("表示する年", years)
-
-        year_total = int(
-            ys.loc[ys["year"] == selected_year, "year_total"].iloc[0]
-        )
-        month_avg = int(
-            ys.loc[ys["year"] == selected_year, "month_avg"].iloc[0]
-        )
-        max_month_salary = int(
-            ys.loc[ys["year"] == selected_year, "max_month_salary"].iloc[0]
-        )
+        row = ys.loc[ys["year"] == selected_year].iloc[0]
+        year_total = int(row["year_total"])
+        month_avg = int(row["month_avg"])
+        max_month_salary = int(row["max_month_salary"])
 
         if compact:
-            st.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
-            st.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
-            st.metric(
-                f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}"
-            )
+            st.metric("合計（円）", f"{year_total:,}")
+            st.metric("月平均（円）", f"{month_avg:,}")
+            st.metric("最大月給（円）", f"{max_month_salary:,}")
         else:
             a, b, c = st.columns(3)
-            a.metric(f"{selected_year}年 合計（円）", f"{year_total:,}")
-            b.metric(f"{selected_year}年 月平均（円）", f"{month_avg:,}")
-            c.metric(
-                f"{selected_year}年 最大月給（円）", f"{max_month_salary:,}"
-            )
+            a.metric("合計（円）", f"{year_total:,}")
+            b.metric("月平均（円）", f"{month_avg:,}")
+            c.metric("最大月給（円）", f"{max_month_salary:,}")
 
 with tab3:
-    if df.empty:
+    if ts.empty:
         st.info("データがありません．")
     else:
-        ts = build_timeseries(df)
         ys = yearly_summary(ts)
-
-        years = sorted(ts["year"].unique().tolist(), reverse=True)
-        selected_year_graph = st.selectbox(
-            "対象年（グラフ）", years, key="graph_year"
-        )
 
         st.markdown(
             "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年内の月別推移</h3>",
             unsafe_allow_html=True,
         )
 
-        year_ts = ts[ts["year"] == selected_year_graph].copy()
-        year_ts = year_ts.sort_values("month_date").reset_index(drop=True)
-        year_ts["month_label"] = year_ts["month_date"].dt.strftime("%m")
+        if year_ts.empty:
+            st.info(f"{selected_year}年のデータがありません．")
+        else:
+            graph_ts = year_ts.sort_values("month_date").reset_index(drop=True)
+            graph_ts["month_label"] = graph_ts["month_date"].dt.strftime("%m")
 
-        month_target = 200_000
-        month_tick_values = list(range(0, month_target + 1, 20_000))
-
-        month_bar = (
-            alt.Chart(year_ts)
-            .mark_bar()
-            .encode(
-                x=alt.X(
-                    "month_label:O", title="月", axis=alt.Axis(labelAngle=0)
-                ),
-                y=alt.Y(
-                    "salary:Q",
-                    title="給料（円）",
-                    scale=alt.Scale(domain=[0, month_target]),
-                    axis=alt.Axis(
-                        values=month_tick_values,
-                        grid=True,
-                        format=",.0f",
-                        labelFontSize=11,
-                        labelOverlap=False,
-                    ),
-                ),
-                tooltip=[
-                    alt.Tooltip("ym:N", title="年月"),
-                    alt.Tooltip(
-                        "salary:Q", title="給料（円）", format=",.0f"
-                    ),
-                ],
+            month_target = 200_000
+            month_upper = nice_upper(
+                graph_ts["salary"].max(), month_target, 20_000
             )
-            .properties(height=520)
-        )
+            month_tick_values = list(range(0, month_upper + 1, 20_000))
 
-        cap_line = (
-            alt.Chart(pd.DataFrame({"y": [month_target]}))
-            .mark_rule(color="red", strokeWidth=2)
-            .encode(y="y:Q")
-        )
+            month_bar = (
+                alt.Chart(graph_ts)
+                .mark_bar()
+                .encode(
+                    x=alt.X(
+                        "month_label:O", title="月", axis=alt.Axis(labelAngle=0)
+                    ),
+                    y=alt.Y(
+                        "salary:Q",
+                        title="給料（円）",
+                        scale=alt.Scale(domain=[0, month_upper]),
+                        axis=alt.Axis(
+                            values=month_tick_values,
+                            grid=True,
+                            format=",.0f",
+                            labelFontSize=11,
+                            labelOverlap=False,
+                        ),
+                    ),
+                    tooltip=[
+                        alt.Tooltip("ym:N", title="年月"),
+                        alt.Tooltip(
+                            "salary:Q", title="給料（円）", format=",.0f"
+                        ),
+                    ],
+                )
+                .properties(height=320)
+            )
 
-        st.altair_chart(
-            (month_bar + cap_line).configure_axis(
-                titleFontSize=13, labelFontSize=11
-            ),
-            use_container_width=True,
-        )
+            cap_line = (
+                alt.Chart(pd.DataFrame({"y": [month_target]}))
+                .mark_rule(color="red", strokeWidth=2)
+                .encode(y="y:Q")
+            )
+
+            st.altair_chart(
+                (month_bar + cap_line).configure_axis(
+                    titleFontSize=13, labelFontSize=11
+                ),
+                width="stretch",
+            )
 
         st.markdown(
             "<h3 style='margin-top: 20px; margin-bottom: 4px;'>年ごとの推移</h3>",
@@ -450,7 +428,8 @@ with tab3:
         )
 
         chart_df = ys.sort_values("year").copy()
-        tick_values = list(range(0, TARGET + 1, 100_000))
+        year_upper = nice_upper(chart_df["year_total"].max(), TARGET, 100_000)
+        tick_values = list(range(0, year_upper + 1, 100_000))
 
         bar = (
             alt.Chart(chart_df)
@@ -460,7 +439,7 @@ with tab3:
                 y=alt.Y(
                     "year_total:Q",
                     title="年合計（円）",
-                    scale=alt.Scale(domain=[0, TARGET]),
+                    scale=alt.Scale(domain=[0, year_upper]),
                     axis=alt.Axis(
                         values=tick_values,
                         grid=True,
@@ -476,7 +455,7 @@ with tab3:
                     ),
                 ],
             )
-            .properties(height=690)
+            .properties(height=350)
         )
 
         target_line = (
@@ -489,7 +468,7 @@ with tab3:
             (bar + target_line).configure_axis(
                 titleFontSize=13, labelFontSize=11
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
 with tab4:
@@ -498,7 +477,7 @@ with tab4:
         st.info("まだデータがありません．")
     else:
         if show_table:
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
         else:
             st.caption("直近の記録（最新10件）")
             recent = df.sort_values("month", ascending=False).head(10)
