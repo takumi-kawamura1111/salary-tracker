@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import streamlit as st
 
-TARGET = 1_500_000
+TARGET = 1_300_000
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
 st.markdown(
