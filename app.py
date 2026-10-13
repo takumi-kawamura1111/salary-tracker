@@ -393,37 +393,6 @@ if diff >= 0:
 else:
     b.metric("超過（円）", f"{abs(diff):,}")
 
-# ===== 入力（上書き） =====
-with st.container(border=True):
-    st.subheader("入力")
-
-    year_candidates = list(range(today.year - 5, today.year + 6))
-    c1, c2 = st.columns(2)
-    input_year = c1.selectbox(
-        "年", year_candidates, index=year_candidates.index(today.year)
-    )
-    input_month = c2.selectbox("月", list(range(1, 13)), index=today.month - 1)
-    month = f"{input_year:04d}-{input_month:02d}"
-
-    saved = df.loc[df["month"] == month, "salary"] if not df.empty else []
-    default_salary = int(saved.iloc[0]) if len(saved) else 0
-
-    # 月ごとに key を変えて，選んだ月の保存済み金額を初期値として表示する
-    salary = st.number_input(
-        "月々の給料（円）",
-        min_value=0,
-        step=1000,
-        value=default_salary,
-        key=f"salary_{month}",
-    )
-    if len(saved):
-        st.caption(f"保存済み：{default_salary:,} 円（保存すると上書きされます）")
-
-    if st.button("保存", type="primary", width="stretch"):
-        upsert_month(month, int(salary))
-        st.session_state["saved_month"] = month
-        st.rerun()
-
 # ===== タブ =====
 tab1, tab2, tab3, tab4 = st.tabs(["📋 月別", "📅 年集計", "📈 グラフ", "🧾 履歴"])
 
@@ -598,3 +567,15 @@ with tab4:
             recent = df.sort_values("month", ascending=False).head(10)
             for _, r in recent.iterrows():
                 st.write(f"**{r['month']}**  —  {int(r['salary']):,} 円")
+
+        # 間違って取り込んだ月を消す（消したあと，明細から取り込み直せる）
+        with st.expander("月のデータを削除"):
+            del_month = st.selectbox(
+                "削除する月",
+                df.sort_values("month", ascending=False)["month"].tolist(),
+                key="delete_month",
+            )
+            if st.button("この月を削除", key="delete_month_btn"):
+                delete_month(del_month)
+                st.session_state["saved_message"] = f"{del_month} を削除しました"
+                st.rerun()
