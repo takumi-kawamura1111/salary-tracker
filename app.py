@@ -1,5 +1,6 @@
 from datetime import date, datetime
 import os
+import re
 
 import altair as alt
 import pandas as pd
@@ -154,10 +155,109 @@ def yearly_summary(ts: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values("year", ascending=False).reset_index(drop=True)
 
 
+# ===== 給与明細（Bulas Payslip Mobile）から取り込み =====
+# 明細の詳細画面でブックマークレットを実行すると，
+# ?pm=YYYY-MM&pn=差引支給額&pt=種別 を付けてこのアプリが開く
+BOOKMARKLET_JS = r"""
+(function(){
+var cells=[].slice.call(document.querySelectorAll('td'));
+var leaf=function(td){return !td.querySelector('td');};
+var monthTd=cells.find(function(td){return leaf(td)&&/^\d{4}年\s*\d{1,2}月$/.test(td.textContent.trim());});
+var netTd=cells.find(function(td){return leaf(td)&&td.textContent.trim()==='差引支給額';});
+var valTd=netTd&&netTd.nextElementSibling;
+var net=valTd?parseInt(valTd.textContent.replace(/[^0-9-]/g,''),10):NaN;
+if(!monthTd||isNaN(net)){alert('給与明細の詳細画面（差引支給額が表示されている画面）で実行してください');return;}
+var m=monthTd.textContent.trim().match(/(\d{4})年\s*(\d{1,2})月/);
+var typeTd=monthTd.nextElementSibling;
+var type=typeTd?typeTd.textContent.trim():'';
+if(!confirm(m[1]+'年'+m[2]+'月（'+(type||'給与')+'）の差引支給額 '+net.toLocaleString()+'円 を給料トラッカーに送りますか？'))return;
+location.href='__APP_URL__?pm='+m[1]+'-'+('0'+m[2]).slice(-2)+'&pn='+net+'&pt='+encodeURIComponent(type);
+})();
+"""
+
+
+def get_app_url() -> str:
+    # Secrets の APP_URL → 開いているページのURL の順で決める
+    try:
+        if "APP_URL" in st.secrets:
+            return str(st.secrets["APP_URL"]).rstrip("/") + "/"
+    except Exception:
+        pass
+    url = getattr(st.context, "url", None) or ""
+    url = url.split("?")[0].split("#")[0]
+    # Streamlit Community Cloud の内部パスを外す
+    url = re.sub(r"/~/\+/?$", "/", url)
+    if not url:
+        return ""
+    return url if url.endswith("/") else url + "/"
+
+
+def make_bookmarklet(app_url: str) -> str:
+    code = "".join(line.strip() for line in BOOKMARKLET_JS.strip().splitlines())
+    code = code.replace("__APP_URL__", app_url)
+    # 日本語は \uXXXX にして，ブックマークのURL欄でも崩れないようにする
+    return "javascript:" + code.encode("ascii", "backslashreplace").decode("ascii")
+
+
+def payslip_import(df: pd.DataFrame):
+    params = st.query_params
+    pm, pn, pt = params.get("pm"), params.get("pn"), params.get("pt", "")
+    if not pm or pn is None:
+        return
+
+    def close():
+        st.query_params.clear()
+        st.rerun()
+
+    valid = (
+        re.fullmatch(r"\d{4}-\d{2}", pm)
+        and 1 <= int(pm[5:]) <= 12
+        and re.fullmatch(r"-?\d+", pn)
+    )
+    if not valid:
+        st.error("給与明細のデータを読み取れませんでした．")
+        if st.button("閉じる", key="payslip_close"):
+            close()
+        return
+
+    net = int(pn)
+    saved = df.loc[df["month"] == pm, "salary"] if not df.empty else []
+    existing = int(saved.iloc[0]) if len(saved) else None
+    is_bonus = "賞与" in pt
+
+    with st.container(border=True):
+        st.subheader("🧾 給与明細の取り込み")
+        st.write(f"**{int(pm[:4])}年{int(pm[5:])}月**（{pt or '給与'}）")
+        st.metric("差引支給額（円）", f"{net:,}")
+
+        new_value = net
+        if existing is not None:
+            st.caption(f"この月の保存済み：{existing:,} 円")
+            if is_bonus:
+                how = st.radio(
+                    "保存のしかた",
+                    ["保存済みの金額に足す", "上書きする"],
+                    horizontal=True,
+                    key="payslip_mode",
+                )
+                if how == "保存済みの金額に足す":
+                    new_value = existing + net
+            st.caption(f"保存後：{new_value:,} 円")
+
+        c1, c2 = st.columns(2)
+        if c1.button("保存", type="primary", width="stretch", key="payslip_save"):
+            upsert_month(pm, new_value)
+            st.session_state["saved_month"] = pm
+            close()
+        if c2.button("やめる", width="stretch", key="payslip_cancel"):
+            close()
+
+
 # 初期化
 init_db()
 df = load_data()
 auto_backup_csv(df)
+payslip_import(df)
 
 # ===== サイドバー：表示設定 =====
 st.sidebar.header("表示設定")
@@ -233,6 +333,21 @@ if uploaded is not None:
 
     except Exception as e:
         st.sidebar.error(f"復元に失敗しました：{e}")
+
+st.sidebar.divider()
+# ===== サイドバー：給与明細から取り込み =====
+st.sidebar.subheader("給与明細から取り込み")
+app_url = get_app_url()
+if app_url:
+    st.sidebar.caption(
+        "① 下のコードをコピー（右上のボタン）\n\n"
+        "② ブラウザでこのページをブックマークし，名前を「給料トラッカーに送る」にする\n\n"
+        "③ ブックマークを編集して，URL欄をコピーしたコードに置き換える\n\n"
+        "④ Payポータルで給与明細の詳細画面を開き，そのブックマークをタップ"
+    )
+    st.sidebar.code(make_bookmarklet(app_url), language=None, wrap_lines=True)
+else:
+    st.sidebar.caption("Secrets に APP_URL（このアプリのURL）を設定すると表示されます．")
 
 st.sidebar.divider()
 if is_sqlite():

@@ -2,3 +2,8 @@ salaries.db
 __pycache__/
 *.pyc
 .venv/
+.DS_Store
+# 給与明細の保存ページ（個人情報を含むので上げない）
+Payポータル*
+*_files/
+backup/
