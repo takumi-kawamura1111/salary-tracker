@@ -10,9 +10,6 @@ import streamlit as st
 TARGET = 1_300_000
 
 st.set_page_config(page_title="給料トラッカー", page_icon="💰", layout="centered")
-st.markdown(
-    "<h1 style='text-align: center;'>給料トラッカー</h1>", unsafe_allow_html=True
-)
 
 
 # ===== データベース接続 =====
@@ -392,6 +389,13 @@ if diff >= 0:
     b.metric("残り（円）", f"{diff:,}")
 else:
     b.metric("超過（円）", f"{abs(diff):,}")
+
+# 残りを，最後に記録した月より後の月数で割った 1か月あたりの目安
+last_month = int(year_ts["month_date"].dt.month.max()) if not year_ts.empty else 0
+months_left = 12 - last_month
+if diff > 0 and months_left > 0 and selected_year >= today.year:
+    per_month = -(-diff // months_left)  # 切り上げ
+    st.metric(f"1か月あたりの目安（残り{months_left}か月）", f"{per_month:,} 円")
 
 # ===== タブ =====
 tab1, tab2, tab3, tab4 = st.tabs(["📋 月別", "📅 年集計", "📈 グラフ", "🧾 履歴"])
