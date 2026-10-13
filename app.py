@@ -225,6 +225,14 @@ def payslip_import(df: pd.DataFrame):
     existing = int(saved.iloc[0]) if len(saved) else None
     is_bonus = "賞与" in pt
 
+    # 賞与は確認なしで，その月の保存済みの金額に足す
+    if is_bonus:
+        upsert_month(pm, (existing or 0) + net)
+        st.session_state["saved_message"] = (
+            f"{int(pm[:4])}年{int(pm[5:])}月に賞与 {net:,} 円を足しました"
+        )
+        close()
+
     with st.container(border=True):
         st.subheader("🧾 給与明細の取り込み")
         st.write(f"**{int(pm[:4])}年{int(pm[5:])}月**（{pt or '給与'}）")
@@ -232,17 +240,7 @@ def payslip_import(df: pd.DataFrame):
 
         new_value = net
         if existing is not None:
-            st.caption(f"この月の保存済み：{existing:,} 円")
-            if is_bonus:
-                how = st.radio(
-                    "保存のしかた",
-                    ["保存済みの金額に足す", "上書きする"],
-                    horizontal=True,
-                    key="payslip_mode",
-                )
-                if how == "保存済みの金額に足す":
-                    new_value = existing + net
-            st.caption(f"保存後：{new_value:,} 円")
+            st.caption(f"この月の保存済み：{existing:,} 円（保存すると上書きされます）")
 
         c1, c2 = st.columns(2)
         if c1.button("保存", type="primary", width="stretch", key="payslip_save"):
@@ -371,6 +369,8 @@ ts = build_timeseries(df)
 # 保存直後の再実行で通知を出す
 if "saved_month" in st.session_state:
     st.toast(f"{st.session_state.pop('saved_month')} を保存しました", icon="✅")
+if "saved_message" in st.session_state:
+    st.toast(st.session_state.pop("saved_message"), icon="✅")
 
 # ===== 表示する年（全タブ共通） =====
 data_years = set(ts["year"].unique().tolist()) if not ts.empty else set()
